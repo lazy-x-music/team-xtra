@@ -47,3 +47,14 @@ export interface ApplicationWithShiftAndWorker extends ShiftApplication {
   shift: Shift;
   worker: { full_name: string } | null;
 }
+
+export interface WorkerAvailability {
+  id: string;
+  worker_id: string;
+  available_date: string;
+  created_at: string;
+}
+
+export interface AvailabilityWithWorker extends WorkerAvailability {
+  worker: { full_name: string } | null;
+}

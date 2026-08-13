@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   CalendarDays,
-  Check,
   CheckCircle2,
   Clock3,
   Send,
@@ -23,10 +22,7 @@ import {
   formatShortDate,
   formatTimeRange,
 } from '@/utils/shiftHelpers';
-import {
-  Calendar,
-  CalendarNav,
-} from '@/components/Calendar';
+import { Calendar, CalendarNav } from '@/components/Calendar';
 import {
   Card,
   Drawer,
@@ -38,9 +34,9 @@ import {
   PageHeader,
   StatusBadge,
 } from '@/components/ui';
-import { ShiftForm } from '@/components/admin/AdminShifts';
+import { localDateStr, todayStr } from '@/utils/holidays';
 
-const today = new Date().toISOString().slice(0, 10);
+const today = todayStr();
 
 export function AdminAvailability({
   refresh,
@@ -52,8 +48,10 @@ export function AdminAvailability({
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [availability, setAvailability] = useState<AvailabilityWithWorker[]>([]);
+  const [confirmedDates, setConfirmedDates] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showShiftForm, setShowShiftForm] = useState(false);
+  const [setupWorker, setSetupWorker] = useState<AvailabilityWithWorker | null>(null);
   const [notice, setNotice] = useState<{ message: string; error?: boolean } | null>(null);
 
   useEffect(() => {
@@ -61,14 +59,25 @@ export function AdminAvailability({
   }, [refresh, year, month]);
 
   async function load() {
-    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-    const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-    const { data } = await supabase
-      .from('worker_availability')
-      .select('*, worker:profiles!worker_id(full_name)')
-      .gte('available_date', start)
-      .lte('available_date', end);
-    setAvailability((data || []) as AvailabilityWithWorker[]);
+    const start = localDateStr(new Date(year, month, 1));
+    const end = localDateStr(new Date(year, month + 1, 0));
+
+    const [{ data: availData }, { data: shiftData }] = await Promise.all([
+      supabase
+        .from('worker_availability')
+        .select('*, worker:profiles!worker_id(full_name)')
+        .gte('available_date', start)
+        .lte('available_date', end),
+      supabase
+        .from('shifts')
+        .select('shift_date, shift_type')
+        .eq('shift_type', 'general')
+        .gte('shift_date', start)
+        .lte('shift_date', end),
+    ]);
+
+    setAvailability((availData || []) as AvailabilityWithWorker[]);
+    setConfirmedDates(new Set((shiftData || []).map((s: { shift_date: string }) => s.shift_date)));
   }
 
   const availabilityMap = useMemo(() => {
@@ -85,20 +94,26 @@ export function AdminAvailability({
   }, [availability, selectedDate]);
 
   function prevMonth() {
-    if (month === 0) {
-      setMonth(11);
-      setYear(year - 1);
-    } else {
-      setMonth(month - 1);
-    }
+    if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1);
+  }
+  function nextMonth() {
+    if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1);
   }
 
-  function nextMonth() {
-    if (month === 11) {
-      setMonth(0);
-      setYear(year + 1);
+  async function setupGeneralShift(workerId: string, date: string, startTime: string, endTime: string) {
+    const { error } = await supabase.rpc('setup_general_shift', {
+      p_worker_id: workerId,
+      p_shift_date: date,
+      p_start_time: startTime,
+      p_end_time: endTime,
+    });
+    if (error) {
+      setNotice({ message: 'Kunne ikke sette opp vakten.', error: true });
     } else {
-      setMonth(month + 1);
+      setNotice({ message: 'Medarbeideren er satt opp på vakt og har fått beskjed.' });
+      setSetupWorker(null);
+      load();
+      onRefresh();
     }
   }
 
@@ -107,7 +122,7 @@ export function AdminAvailability({
       <PageHeader
         eyebrow="Administrasjon"
         title="Tilgjengelighet"
-        description="Se hvilke medarbeidere som er tilgjengelige per dag, og opprett vakter rett fra kalenderen."
+        description="Se hvilke medarbeidere som er tilgjengelige per dag, og sett dem direkte opp på vakt."
       />
 
       {notice && <Notice {...notice} onClose={() => setNotice(null)} />}
@@ -118,17 +133,21 @@ export function AdminAvailability({
           year={year}
           month={month}
           availabilityMap={availabilityMap}
+          confirmedDates={confirmedDates}
           showAvailabilityCounts
           onDateClick={(dateStr) => setSelectedDate(dateStr)}
           selectableFilter={() => true}
         />
-        <div className="mt-4 flex items-center gap-4 text-xs text-gray-400">
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-gray-400">
           <span className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded bg-gray-50 border border-gray-200" /> Helg / helligdag
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-accent-500 text-white text-[8px] flex items-center justify-center font-bold">N</span>
             N tilgjengelige
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-success-500" /> Bekreftet vakt
           </span>
         </div>
       </Card>
@@ -143,44 +162,90 @@ export function AdminAvailability({
             {workersForDate.length === 0 ? (
               <Empty title="Ingen tilgjengelige" text="Ingen medarbeidere har markert seg som tilgjengelige på denne datoen." />
             ) : (
-              <>
-                <div className="flex gap-2 mb-4">
-                  <button
-                    onClick={() => setShowShiftForm(true)}
-                    className="button-primary flex-1 text-sm"
-                  >
-                    Opprett vakt denne dagen
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  {workersForDate.map((w) => (
-                    <div key={w.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
-                      <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
-                        {w.worker?.full_name?.charAt(0) || '?'}
-                      </div>
-                      <p className="text-sm font-semibold flex-1">{w.worker?.full_name || 'Ukjent'}</p>
+              <div className="space-y-3">
+                {workersForDate.map((w) => (
+                  <div key={w.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
+                    <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
+                      {w.worker?.full_name?.charAt(0) || '?'}
                     </div>
-                  ))}
-                </div>
-              </>
+                    <p className="text-sm font-semibold flex-1">{w.worker?.full_name || 'Ukjent'}</p>
+                    <button
+                      onClick={() => setSetupWorker(w)}
+                      className="text-xs font-semibold bg-primary-800 text-white px-3 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-1.5"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" /> Set opp på vakt
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </Drawer>
       )}
 
-      {showShiftForm && selectedDate && (
-        <ShiftForm
-          initialDate={selectedDate}
-          onClose={() => setShowShiftForm(false)}
-          onCreated={() => {
-            setShowShiftForm(false);
-            setSelectedDate(null);
-            onRefresh();
-            setNotice({ message: 'Vakten er opprettet. Du kan nå tildele medarbeidere fra listen.' });
-          }}
+      {setupWorker && (
+        <SetupShiftModal
+          worker={setupWorker}
+          onClose={() => setSetupWorker(null)}
+          onConfirm={(startTime, endTime) =>
+            setupGeneralShift(setupWorker.worker_id, setupWorker.available_date, startTime, endTime)
+          }
         />
       )}
     </>
+  );
+}
+
+function SetupShiftModal({
+  worker,
+  onClose,
+  onConfirm,
+}: {
+  worker: AvailabilityWithWorker;
+  onClose: () => void;
+  onConfirm: (startTime: string, endTime: string) => void;
+}) {
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('15:00');
+  const hours = computeHours(startTime, endTime);
+
+  return (
+    <Modal title="Set opp på vakt" onClose={onClose} maxWidth="sm:max-w-md">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+          <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
+            {worker.worker?.full_name?.charAt(0) || '?'}
+          </div>
+          <div>
+            <p className="text-sm font-semibold">{worker.worker?.full_name || 'Ukjent'}</p>
+            <p className="text-xs text-gray-500">{formatShortDate(worker.available_date)}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Fra">
+            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input" />
+          </Field>
+          <Field label="Til">
+            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input" />
+          </Field>
+        </div>
+        <div className="rounded-xl bg-primary-50 px-4 py-3 flex items-center gap-3 text-sm text-primary-800">
+          <Clock3 className="w-4 h-4" />
+          <span>Planlagt arbeidstid</span>
+          <strong className="ml-auto">{hours > 0 ? `${hours} timer` : 'Ugyldig tidsrom'}</strong>
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="button-secondary flex-1">Avbryt</button>
+          <button
+            disabled={hours <= 0}
+            onClick={() => onConfirm(startTime, endTime)}
+            className="button-primary flex-1"
+          >
+            Bekreft vakt
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -223,12 +288,7 @@ export function AdminReports({ refresh }: { refresh: number }) {
         title="Rapporter"
         description="Oversikt over godkjente timer for Team Xtra, automatisk registrert når medarbeidere godkjennes for vakter."
         action={
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="input w-auto"
-          />
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-auto" />
         }
       />
 

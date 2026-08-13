@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import {
   ArrowRight,
   CalendarDays,
-  CalendarPlus,
   Check,
   ChevronRight,
   Clock3,
@@ -12,10 +11,8 @@ import {
   Trash2,
   UserMinus,
   Users,
-  X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
 import {
   ApplicationWithWorker,
   ApplicationWithShiftAndWorker,
@@ -28,6 +25,7 @@ import {
   formatShortDate,
   formatTimeRange,
   isShiftPast,
+  shiftTypeLabel,
 } from '@/utils/shiftHelpers';
 import {
   Card,
@@ -42,17 +40,17 @@ import {
   SectionTitle,
   StatusBadge,
 } from '@/components/ui';
+import { todayStr } from '@/utils/holidays';
 
-const today = new Date().toISOString().slice(0, 10);
+const today = todayStr();
 
-export function AdminShifts({
+export function AdminCampaigns({
   refresh,
   onRefresh,
 }: {
   refresh: number;
   onRefresh: () => void;
 }) {
-  const { profile } = useAuth();
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [applications, setApplications] = useState<ApplicationWithWorker[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -67,7 +65,7 @@ export function AdminShifts({
 
   async function load() {
     const [{ data: shiftData }, { data: appData }] = await Promise.all([
-      supabase.from('shifts').select('*').order('shift_date', { ascending: true }).order('start_time', { ascending: true }),
+      supabase.from('shifts').select('*').eq('shift_type', 'campaign').order('shift_date', { ascending: true }).order('start_time', { ascending: true }),
       supabase.from('shift_applications').select('*, worker:profiles!worker_id(full_name)').order('applied_at', { ascending: true }),
     ]);
     setShifts((shiftData || []) as Shift[]);
@@ -91,7 +89,7 @@ export function AdminShifts({
     const { error } = await supabase.rpc('remove_application', { p_application_id: id });
     if (error) setNotice({ message: 'Kunne ikke fjerne medarbeideren.', error: true });
     else {
-      setNotice({ message: 'Medarbeideren er fjernet fra vakten.' });
+      setNotice({ message: 'Medarbeideren er fjernet fra kampanjen.' });
       load();
       onRefresh();
     }
@@ -99,9 +97,9 @@ export function AdminShifts({
 
   async function deleteShift(id: string) {
     const { error } = await supabase.from('shifts').delete().eq('id', id);
-    if (error) setNotice({ message: 'Kunne ikke slette vakten.', error: true });
+    if (error) setNotice({ message: 'Kunne ikke slette kampanjen.', error: true });
     else {
-      setNotice({ message: 'Vakten er slettet.' });
+      setNotice({ message: 'Kampanjen er slettet.' });
       setDeleteTarget(null);
       load();
       onRefresh();
@@ -126,15 +124,15 @@ export function AdminShifts({
     <>
       <PageHeader
         eyebrow="Administrasjon"
-        title="Vakter"
-        description="Opprett og administrer bemanningen for Team Xtra."
+        title="Kampanjer"
+        description="Opprett prosjektbaserte kampanjevakter der Team Xtra kan melde seg på, og godkjenn søkere opptil antall plasser."
         action={
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Opprett vakt
+            Opprett kampanje
           </button>
         }
       />
@@ -142,19 +140,19 @@ export function AdminShifts({
       {notice && <Notice {...notice} onClose={() => setNotice(null)} />}
 
       <div className="grid sm:grid-cols-3 gap-4 mb-8">
-        <Metric label="Kommende vakter" value={upcoming.length} icon={<CalendarDays className="w-5 h-5" />} />
+        <Metric label="Kommende kampanjer" value={upcoming.length} icon={<CalendarDays className="w-5 h-5" />} />
         <Metric label="Åpne søknader" value={applications.filter((a) => a.status === 'pending').length} icon={<Users className="w-5 h-5" />} />
         <Metric label="Godkjente timer" value={formatHours(applications.filter((a) => a.verified).reduce((sum, a) => sum + Number(a.verified_hours || 0), 0))} icon={<FileCheck2 className="w-5 h-5" />} />
       </div>
 
       <div className="space-y-4">
-        <SectionTitle title="Kommende vakter" />
+        <SectionTitle title="Kommende kampanjer" />
         <Card>
           {upcoming.length === 0 ? (
-            <Empty title="Ingen kommende vakter" text="Opprett den første vakten for å komme i gang." />
+            <Empty title="Ingen kommende kampanjer" text="Opprett den første kampanjevakten for å komme i gang." />
           ) : (
             upcoming.map((shift) => (
-              <ShiftAdminRow
+              <CampaignRow
                 key={shift.id}
                 shift={shift}
                 applications={applications.filter((a) => a.shift_id === shift.id)}
@@ -169,10 +167,10 @@ export function AdminShifts({
 
       {past.length > 0 && (
         <div className="space-y-4 mt-8">
-          <SectionTitle title="Tidligere vakter" />
+          <SectionTitle title="Tidligere kampanjer" />
           <Card>
             {past.map((shift) => (
-              <ShiftAdminRow
+              <CampaignRow
                 key={shift.id}
                 shift={shift}
                 applications={applications.filter((a) => a.shift_id === shift.id)}
@@ -192,7 +190,7 @@ export function AdminShifts({
             setShowForm(false);
             load();
             onRefresh();
-            setNotice({ message: 'Vakten er opprettet.' });
+            setNotice({ message: 'Kampanjen er opprettet.' });
           }}
         />
       )}
@@ -210,9 +208,9 @@ export function AdminShifts({
 
       {deleteTarget && (
         <ConfirmDialog
-          title="Slett vakt"
+          title="Slett kampanje"
           message={`Er du sikker på at du vil slette "${deleteTarget.title}"? Alle påmeldinger vil også bli fjernet. Dette kan ikke angres.`}
-          confirmLabel="Slett vakt"
+          confirmLabel="Slett kampanje"
           danger
           onConfirm={() => deleteShift(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}
@@ -230,7 +228,7 @@ export function AdminShifts({
   );
 }
 
-function ShiftAdminRow({
+function CampaignRow({
   shift,
   applications,
   onSelect,
@@ -249,7 +247,7 @@ function ShiftAdminRow({
 
   return (
     <div className="p-5 border-b border-gray-100 last:border-0 flex flex-col md:flex-row md:items-center gap-4">
-      <div className="w-14 h-14 rounded-xl bg-primary-50 text-primary-800 flex flex-col items-center justify-center shrink-0">
+      <div className="w-14 h-14 rounded-xl bg-accent-50 text-accent-700 flex flex-col items-center justify-center shrink-0">
         <span className="text-lg font-bold leading-none">
           {new Date(`${shift.shift_date}T00:00:00`).getDate()}
         </span>
@@ -297,7 +295,7 @@ function ShiftAdminRow({
   );
 }
 
-function ShiftForm({
+export function ShiftForm({
   onClose,
   onCreated,
   initialDate,
@@ -312,7 +310,7 @@ function ShiftForm({
     shift_date: initialDate || today,
     start_time: '09:00',
     end_time: '15:00',
-    required_workers: '3',
+    required_workers: '5',
   });
   const [saving, setSaving] = useState(false);
   const hours = computeHours(form.start_time, form.end_time);
@@ -324,6 +322,7 @@ function ShiftForm({
     const { error } = await supabase.from('shifts').insert({
       ...form,
       required_workers: Number(form.required_workers),
+      shift_type: 'campaign',
       created_by: user.user?.id,
     });
     setSaving(false);
@@ -331,7 +330,7 @@ function ShiftForm({
   }
 
   return (
-    <Modal title="Opprett ny vakt" onClose={onClose}>
+    <Modal title="Opprett ny kampanje" onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Tittel">
           <input
@@ -346,50 +345,25 @@ function ShiftForm({
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Hva skal gjøres på vakten?"
+            placeholder="Hva skal gjøres på kampanjen?"
             rows={3}
             className="input resize-none"
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dato">
-            <input
-              required
-              type="date"
-              value={form.shift_date}
-              onChange={(e) => setForm({ ...form, shift_date: e.target.value })}
-              className="input"
-            />
+            <input required type="date" value={form.shift_date} onChange={(e) => setForm({ ...form, shift_date: e.target.value })} className="input" />
           </Field>
           <Field label="Antall medarbeidere">
-            <input
-              required
-              type="number"
-              min="1"
-              value={form.required_workers}
-              onChange={(e) => setForm({ ...form, required_workers: e.target.value })}
-              className="input"
-            />
+            <input required type="number" min="1" value={form.required_workers} onChange={(e) => setForm({ ...form, required_workers: e.target.value })} className="input" />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fra">
-            <input
-              required
-              type="time"
-              value={form.start_time}
-              onChange={(e) => setForm({ ...form, start_time: e.target.value })}
-              className="input"
-            />
+            <input required type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} className="input" />
           </Field>
           <Field label="Til">
-            <input
-              required
-              type="time"
-              value={form.end_time}
-              onChange={(e) => setForm({ ...form, end_time: e.target.value })}
-              className="input"
-            />
+            <input required type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} className="input" />
           </Field>
         </div>
         <div className="rounded-xl bg-primary-50 px-4 py-3 flex items-center gap-3 text-sm text-primary-800">
@@ -398,11 +372,9 @@ function ShiftForm({
           <strong className="ml-auto">{hours > 0 ? `${hours} timer` : 'Ugyldig tidsrom'}</strong>
         </div>
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={onClose} className="button-secondary flex-1">
-            Avbryt
-          </button>
+          <button type="button" onClick={onClose} className="button-secondary flex-1">Avbryt</button>
           <button disabled={saving || hours <= 0} className="button-primary flex-1">
-            {saving ? 'Oppretter…' : 'Opprett vakt'}
+            {saving ? 'Oppretter…' : 'Opprett kampanje'}
           </button>
         </div>
       </form>
@@ -520,27 +492,13 @@ function EditHoursModal({
           </div>
         </div>
         <Field label="Faktiske timer">
-          <input
-            type="number"
-            min="0"
-            max="24"
-            step="0.25"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            className="input"
-          />
+          <input type="number" min="0" max="24" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} className="input" />
         </Field>
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} className="button-secondary flex-1">
-            Avbryt
-          </button>
-          <button onClick={() => onSave(application.id, Number(hours))} className="button-primary flex-1">
-            Lagre timer
-          </button>
+          <button onClick={onClose} className="button-secondary flex-1">Avbryt</button>
+          <button onClick={() => onSave(application.id, Number(hours))} className="button-primary flex-1">Lagre timer</button>
         </div>
       </div>
     </Modal>
   );
 }
-
-export { ShiftForm };

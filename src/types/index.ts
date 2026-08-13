@@ -8,6 +8,7 @@ export interface Profile {
 }
 
 export type ShiftStatus = 'open' | 'fullsatt';
+export type ShiftType = 'general' | 'campaign';
 
 export interface Shift {
   id: string;
@@ -18,6 +19,7 @@ export interface Shift {
   end_time: string;
   required_workers: number;
   status: ShiftStatus;
+  shift_type: ShiftType;
   created_by: string;
   created_at: string;
 }
@@ -57,4 +59,22 @@ export interface WorkerAvailability {
 
 export interface AvailabilityWithWorker extends WorkerAvailability {
   worker: { full_name: string } | null;
+}
+
+export type NotificationType =
+  | 'shift_assigned'
+  | 'campaign_approved'
+  | 'campaign_rejected'
+  | 'shift_removed'
+  | 'hours_updated';
+
+export interface AppNotification {
+  id: string;
+  worker_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  shift_id: string | null;
+  read: boolean;
+  created_at: string;
 }

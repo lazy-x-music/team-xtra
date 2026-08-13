@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { getHolidayName, isHoliday, isWeekend, isSelectableDate } from '@/utils/holidays';
+import { getHolidayName, isHoliday, isWeekend, isSelectableDate, localDateStr, todayStr } from '@/utils/holidays';
 
 const WEEKDAYS = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
 const MONTH_NAMES = [
@@ -23,6 +23,7 @@ export interface CalendarProps {
   year: number;
   month: number; // 0-indexed
   selectedDates?: Set<string>;
+  confirmedDates?: Set<string>;
   availabilityMap?: Map<string, number>; // dateStr -> count of available workers
   onDateClick?: (dateStr: string, day: CalendarDay) => void;
   selectableFilter?: (dateStr: string) => boolean;
@@ -34,6 +35,7 @@ export function Calendar({
   year,
   month,
   selectedDates,
+  confirmedDates,
   availabilityMap,
   onDateClick,
   selectableFilter,
@@ -41,7 +43,7 @@ export function Calendar({
   renderDayBadge,
 }: CalendarProps) {
   const days = useMemo(() => buildCalendarDays(year, month), [year, month]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
 
   return (
     <div className="select-none">
@@ -55,6 +57,7 @@ export function Calendar({
       <div className="grid grid-cols-7 gap-1">
         {days.map((day, i) => {
           const isSelected = selectedDates?.has(day.dateStr);
+          const isConfirmed = confirmedDates?.has(day.dateStr);
           const isAvailable = availabilityMap?.get(day.dateStr) ?? 0;
           const passesFilter = selectableFilter ? selectableFilter(day.dateStr) : true;
           const canClick = day.inMonth && day.selectable && passesFilter;
@@ -70,21 +73,26 @@ export function Calendar({
                 text-sm transition-all
                 ${!day.inMonth ? 'opacity-30 pointer-events-none' : ''}
                 ${day.isWeekend || day.isHoliday ? 'bg-gray-50 text-gray-300' : ''}
-                ${day.isToday && !isSelected ? 'ring-1 ring-primary-300' : ''}
-                ${isSelected
-                  ? 'bg-primary-800 text-white font-bold shadow-sm'
-                  : canClick
-                    ? 'hover:bg-primary-50 hover:text-primary-800 cursor-pointer text-gray-700'
-                    : day.inMonth && !day.selectable
-                      ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                      : ''}
+                ${day.isToday && !isSelected && !isConfirmed ? 'ring-1 ring-primary-300' : ''}
+                ${isConfirmed
+                  ? 'bg-success-500 text-white font-bold shadow-sm'
+                  : isSelected
+                    ? 'bg-primary-800 text-white font-bold shadow-sm'
+                    : canClick
+                      ? 'hover:bg-primary-50 hover:text-primary-800 cursor-pointer text-gray-700'
+                      : day.inMonth && !day.selectable
+                        ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                        : ''}
               `}
             >
-              <span className={isSelected ? 'text-white' : ''}>{day.day}</span>
-              {day.isHoliday && day.inMonth && !isSelected && (
+              <span className={isSelected || isConfirmed ? 'text-white' : ''}>{day.day}</span>
+              {day.isHoliday && day.inMonth && !isSelected && !isConfirmed && (
                 <span className="text-[8px] text-gray-400 mt-0.5 leading-none">Hellig</span>
               )}
-              {showAvailabilityCounts && isAvailable > 0 && !isSelected && (
+              {isConfirmed && (
+                <span className="text-[7px] font-semibold mt-0.5 leading-none">Vakt</span>
+              )}
+              {showAvailabilityCounts && isAvailable > 0 && !isSelected && !isConfirmed && (
                 <span className="absolute bottom-0.5 right-0.5 text-[9px] font-bold bg-accent-500 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
                   {isAvailable}
                 </span>
@@ -132,21 +140,21 @@ export function buildCalendarDays(year: number, month: number): CalendarDay[] {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startWeekday = (firstDay.getDay() + 6) % 7; // Monday = 0
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
 
   const days: CalendarDay[] = [];
 
   // Previous month padding
   for (let i = startWeekday - 1; i >= 0; i--) {
     const d = new Date(year, month, -i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDateStr(d);
     days.push(makeDay(dateStr, d.getDate(), false, today));
   }
 
   // Current month
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const date = new Date(year, month, d);
-    const dateStr = date.toISOString().slice(0, 10);
+    const dateStr = localDateStr(date);
     days.push(makeDay(dateStr, d, true, today));
   }
 
@@ -154,7 +162,7 @@ export function buildCalendarDays(year: number, month: number): CalendarDay[] {
   const remaining = 42 - days.length;
   for (let d = 1; d <= remaining; d++) {
     const date = new Date(year, month + 1, d);
-    const dateStr = date.toISOString().slice(0, 10);
+    const dateStr = localDateStr(date);
     days.push(makeDay(dateStr, d, false, today));
   }
 

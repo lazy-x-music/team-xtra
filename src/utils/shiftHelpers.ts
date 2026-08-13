@@ -45,3 +45,7 @@ export function formatMonthLabel(year: number, month: number): string {
     year: 'numeric',
   });
 }
+
+export function shiftTypeLabel(type: string): string {
+  return type === 'general' ? 'Generell vakt' : 'Kampanje';
+}

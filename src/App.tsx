@@ -1,23 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BarChart3,
+  Bell,
   CalendarDays,
   CalendarPlus,
   CheckCircle2,
   ChevronRight,
   LogOut,
   Menu,
+  Megaphone,
   ShieldCheck,
   Users,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { AuthScreen } from '@/components/AuthScreen';
 import { useAuth, AuthProvider } from '@/contexts/AuthContext';
-import { AdminShifts } from '@/components/admin/AdminShifts';
+import { AdminCampaigns } from '@/components/admin/AdminShifts';
 import { AdminAvailability, AdminReports } from '@/components/admin/AdminAvailability';
-import { WorkerAvailability, WorkerShifts, MyShifts } from '@/components/worker/WorkerScreens';
+import {
+  WorkerAvailability,
+  WorkerCampaigns,
+  MyShifts,
+  WorkerNotifications,
+} from '@/components/worker/WorkerScreens';
 
-type AdminPage = 'shifts' | 'availability' | 'reports';
-type WorkerPage = 'availability' | 'shifts' | 'my-shifts';
+type AdminPage = 'availability' | 'campaigns' | 'reports';
+type WorkerPage = 'campaigns' | 'availability' | 'my-shifts' | 'notifications';
 
 function App() {
   return (
@@ -47,14 +55,14 @@ function LoadingScreen() {
 }
 
 function AdminApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
-  const [page, setPage] = useState<AdminPage>('shifts');
+  const [page, setPage] = useState<AdminPage>('availability');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const refreshData = () => setRefresh((v) => v + 1);
 
   const nav = [
-    { id: 'shifts' as const, label: 'Vakter', icon: CalendarDays },
     { id: 'availability' as const, label: 'Tilgjengelighet', icon: Users },
+    { id: 'campaigns' as const, label: 'Kampanjer', icon: Megaphone },
     { id: 'reports' as const, label: 'Rapporter', icon: BarChart3 },
   ];
 
@@ -63,31 +71,29 @@ function AdminApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
       roleLabel="Aksell Management"
       nav={nav}
       active={page}
-      onChange={(v) => {
-        setPage(v);
-        setMobileOpen(false);
-      }}
+      onChange={(v) => { setPage(v); setMobileOpen(false); }}
       mobileOpen={mobileOpen}
       setMobileOpen={setMobileOpen}
       onSignOut={onSignOut}
     >
-      {page === 'shifts' && <AdminShifts refresh={refresh} onRefresh={refreshData} />}
       {page === 'availability' && <AdminAvailability refresh={refresh} onRefresh={refreshData} />}
+      {page === 'campaigns' && <AdminCampaigns refresh={refresh} onRefresh={refreshData} />}
       {page === 'reports' && <AdminReports refresh={refresh} />}
     </AppFrame>
   );
 }
 
 function WorkerApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
-  const [page, setPage] = useState<WorkerPage>('shifts');
+  const [page, setPage] = useState<WorkerPage>('notifications');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const refreshData = () => setRefresh((v) => v + 1);
 
   const nav = [
-    { id: 'shifts' as const, label: 'Vakter', icon: CalendarDays },
+    { id: 'notifications' as const, label: 'Meldinger', icon: Bell, badge: true },
+    { id: 'campaigns' as const, label: 'Kampanjer', icon: Megaphone },
     { id: 'availability' as const, label: 'Tilgjengelig', icon: CheckCircle2 },
-    { id: 'my-shifts' as const, label: 'Mine vakter', icon: CalendarPlus },
+    { id: 'my-shifts' as const, label: 'Mine vakter', icon: CalendarDays },
   ];
 
   return (
@@ -95,19 +101,25 @@ function WorkerApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
       roleLabel="Team Xtra"
       nav={nav}
       active={page}
-      onChange={(v) => {
-        setPage(v);
-        setMobileOpen(false);
-      }}
+      onChange={(v) => { setPage(v); setMobileOpen(false); }}
       mobileOpen={mobileOpen}
       setMobileOpen={setMobileOpen}
       onSignOut={onSignOut}
+      refresh={refresh}
     >
-      {page === 'shifts' && <WorkerShifts refresh={refresh} onRefresh={refreshData} />}
+      {page === 'notifications' && <WorkerNotifications refresh={refresh} />}
+      {page === 'campaigns' && <WorkerCampaigns refresh={refresh} onRefresh={refreshData} />}
       {page === 'availability' && <WorkerAvailability refresh={refresh} onRefresh={refreshData} />}
       {page === 'my-shifts' && <MyShifts refresh={refresh} />}
     </AppFrame>
   );
+}
+
+interface NavItem<T> {
+  id: T;
+  label: string;
+  icon: typeof CalendarDays;
+  badge?: boolean;
 }
 
 function AppFrame<T extends string>({
@@ -118,17 +130,31 @@ function AppFrame<T extends string>({
   mobileOpen,
   setMobileOpen,
   onSignOut,
+  refresh,
   children,
 }: {
   roleLabel: string;
-  nav: { id: T; label: string; icon: typeof CalendarDays }[];
+  nav: NavItem<T>[];
   active: T;
   onChange: (id: T) => void;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
   onSignOut: () => Promise<void>;
+  refresh?: number;
   children: React.ReactNode;
 }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  if (refresh !== undefined && roleLabel === 'Team Xtra') {
+    useEffect(() => {
+      supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('read', false)
+        .then(({ count }) => setUnreadCount(count || 0));
+    }, [refresh]);
+  }
+
   return (
     <div className="min-h-screen bg-[#f5f7f9] text-gray-900">
       <aside
@@ -150,7 +176,7 @@ function AppFrame<T extends string>({
             Arbeidsflate
           </div>
           <nav className="space-y-1">
-            {nav.map(({ id, label, icon: Icon }) => (
+            {nav.map(({ id, label, icon: Icon, badge }) => (
               <button
                 key={id}
                 onClick={() => onChange(id)}
@@ -160,7 +186,12 @@ function AppFrame<T extends string>({
               >
                 <Icon className="w-[18px] h-[18px]" />
                 {label}
-                {active === id && <ChevronRight className="w-4 h-4 ml-auto" />}
+                {badge && unreadCount > 0 && (
+                  <span className="ml-auto bg-accent-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                    {unreadCount}
+                  </span>
+                )}
+                {active === id && !badge && <ChevronRight className="w-4 h-4 ml-auto" />}
               </button>
             ))}
           </nav>

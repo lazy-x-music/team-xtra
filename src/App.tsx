@@ -6,17 +6,22 @@ import {
   CalendarPlus,
   CheckCircle2,
   ChevronRight,
+  Hash,
   LogOut,
   Menu,
   Megaphone,
+  Settings,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { AuthScreen } from '@/components/AuthScreen';
+import { AuthScreen, PinOnboarding } from '@/components/AuthScreen';
 import { useAuth, AuthProvider } from '@/contexts/AuthContext';
 import { AdminCampaigns } from '@/components/admin/AdminShifts';
 import { AdminAvailability, AdminReports } from '@/components/admin/AdminAvailability';
+import { AdminEmployees } from '@/components/admin/AdminEmployees';
+import { AdminSettings } from '@/components/admin/AdminSettings';
+import { employeeLabel } from '@/utils/shiftHelpers';
 import {
   WorkerAvailability,
   WorkerCampaigns,
@@ -24,7 +29,7 @@ import {
   WorkerNotifications,
 } from '@/components/worker/WorkerScreens';
 
-type AdminPage = 'availability' | 'campaigns' | 'reports';
+type AdminPage = 'employees' | 'availability' | 'campaigns' | 'reports' | 'settings';
 type WorkerPage = 'campaigns' | 'availability' | 'my-shifts' | 'notifications';
 
 function App() {
@@ -39,6 +44,9 @@ function AppContent() {
   const { session, profile, loading, signOut } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!session || !profile) return <AuthScreen />;
+  if (profile.role === 'worker' && !profile.setup_complete) {
+    return <PinOnboarding />;
+  }
   return profile.role === 'admin' ? (
     <AdminApp onSignOut={signOut} />
   ) : (
@@ -55,20 +63,26 @@ function LoadingScreen() {
 }
 
 function AdminApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
-  const [page, setPage] = useState<AdminPage>('availability');
+  const { session, profile } = useAuth();
+  const [page, setPage] = useState<AdminPage>('employees');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const refreshData = () => setRefresh((v) => v + 1);
 
   const nav = [
-    { id: 'availability' as const, label: 'Tilgjengelighet', icon: Users },
+    { id: 'employees' as const, label: 'Ansattoversikt', icon: Users },
+    { id: 'availability' as const, label: 'Tilgjengelighet', icon: CalendarDays },
     { id: 'campaigns' as const, label: 'Kampanjer', icon: Megaphone },
     { id: 'reports' as const, label: 'Rapporter', icon: BarChart3 },
+    { id: 'settings' as const, label: 'Admininnstillinger', icon: Settings },
   ];
+
+  const identity = `Logget inn som Admin: ${session?.user?.email || ''}`;
 
   return (
     <AppFrame
       roleLabel="Aksell Management"
+      identity={identity}
       nav={nav}
       active={page}
       onChange={(v) => { setPage(v); setMobileOpen(false); }}
@@ -76,14 +90,17 @@ function AdminApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
       setMobileOpen={setMobileOpen}
       onSignOut={onSignOut}
     >
+      {page === 'employees' && <AdminEmployees refresh={refresh} onRefresh={refreshData} />}
       {page === 'availability' && <AdminAvailability refresh={refresh} onRefresh={refreshData} />}
       {page === 'campaigns' && <AdminCampaigns refresh={refresh} onRefresh={refreshData} />}
       {page === 'reports' && <AdminReports refresh={refresh} />}
+      {page === 'settings' && <AdminSettings refresh={refresh} />}
     </AppFrame>
   );
 }
 
 function WorkerApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
+  const { profile } = useAuth();
   const [page, setPage] = useState<WorkerPage>('notifications');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -96,9 +113,12 @@ function WorkerApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
     { id: 'my-shifts' as const, label: 'Mine vakter', icon: CalendarDays },
   ];
 
+  const identity = `Logget inn som ${employeeLabel(profile?.employee_number)}`;
+
   return (
     <AppFrame
       roleLabel="Team Xtra"
+      identity={identity}
       nav={nav}
       active={page}
       onChange={(v) => { setPage(v); setMobileOpen(false); }}
@@ -124,6 +144,7 @@ interface NavItem<T> {
 
 function AppFrame<T extends string>({
   roleLabel,
+  identity,
   nav,
   active,
   onChange,
@@ -134,6 +155,7 @@ function AppFrame<T extends string>({
   children,
 }: {
   roleLabel: string;
+  identity: string;
   nav: NavItem<T>[];
   active: T;
   onChange: (id: T) => void;
@@ -197,12 +219,12 @@ function AppFrame<T extends string>({
           </nav>
           <div className="mt-auto border-t border-primary-800 pt-4">
             <div className="flex items-center gap-3 px-3 py-3 mb-2">
-              <div className="w-9 h-9 rounded-full bg-primary-700 flex items-center justify-center text-sm font-semibold">
-                <ShieldCheck className="w-4 h-4" />
+              <div className="w-9 h-9 rounded-full bg-primary-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                {roleLabel === 'Team Xtra' ? <Hash className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{roleLabel}</p>
-                <p className="text-xs text-primary-400">Innlogget</p>
+                <p className="text-sm font-medium truncate">{identity}</p>
+                <p className="text-xs text-primary-400">{roleLabel}</p>
               </div>
             </div>
             <button
@@ -230,9 +252,20 @@ function AppFrame<T extends string>({
             <Menu className="w-5 h-5" />
           </button>
           <div className="lg:hidden font-bold text-primary-900">Aksell Vaktplan</div>
-          <div className="hidden lg:block" />
-          <div className="w-8 h-8 rounded-full bg-accent-100 text-accent-700 flex items-center justify-center">
-            <Users className="w-4 h-4" />
+          <div className="hidden lg:flex items-center gap-2 text-sm text-gray-500">
+            <span className="font-medium">{identity}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-error-600 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Logg ut</span>
+            </button>
+            <div className="w-8 h-8 rounded-full bg-accent-100 text-accent-700 flex items-center justify-center">
+              <Users className="w-4 h-4" />
+            </div>
           </div>
         </header>
         <main className="p-4 sm:p-8 max-w-[1440px] mx-auto">{children}</main>

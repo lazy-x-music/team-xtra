@@ -49,3 +49,8 @@ export function formatMonthLabel(year: number, month: number): string {
 export function shiftTypeLabel(type: string): string {
   return type === 'general' ? 'Generell vakt' : 'Kampanje';
 }
+
+export function employeeLabel(employeeNumber: number | null | undefined): string {
+  if (employeeNumber == null) return 'Ukjent ansatt';
+  return `Ansatt #${employeeNumber}`;
+}

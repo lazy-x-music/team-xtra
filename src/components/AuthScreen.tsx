@@ -1,13 +1,160 @@
 import { FormEvent, useState } from 'react';
-import { CalendarClock, Loader2, Lock, Mail, User } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Hash, KeyRound, Loader2, Lock, LogOut, Mail, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function AuthScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  return <LoginScreen />;
+}
+
+export function PinOnboarding() {
+  const { completePinSetup, signOut } = useAuth();
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (pin.length !== 4) {
+      setError('PIN-koden må være nøyaktig 4 siffer.');
+      return;
+    }
+    if (pin !== confirmPin) {
+      setError('PIN-kodene stemmer ikke overens.');
+      return;
+    }
+
+    setSubmitting(true);
+    const result = await completePinSetup(pin);
+    if (result.error) {
+      setError(result.error);
+      setSubmitting(false);
+    } else {
+      setSuccess(true);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-primary-950 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center">
+          <div className="flex items-center gap-2 mb-8 justify-center">
+            <CalendarClock className="w-7 h-7 text-accent-400" />
+            <span className="text-lg font-semibold tracking-tight text-white">
+              Aksell Vaktplan
+            </span>
+          </div>
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="w-14 h-14 rounded-full bg-success-100 text-success-600 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <h2 className="text-lg font-bold text-primary-950 mb-2">PIN-kode lagret! Velkommen.</h2>
+            <p className="text-sm text-gray-500 mb-6">Du videresendes til vaktplanen din…</p>
+            <div className="flex items-center justify-center">
+              <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-primary-950 flex items-center justify-center p-6">
+      <div className="w-full max-w-sm">
+        <div className="flex items-center gap-2 mb-8 justify-center">
+          <CalendarClock className="w-7 h-7 text-accent-400" />
+          <span className="text-lg font-semibold tracking-tight text-white">
+            Aksell Vaktplan
+          </span>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-xl p-7">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <h2 className="text-lg font-bold text-primary-950">Opprett din personlige PIN-kode</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-6">
+            Dette er første gang du logger inn. Velg en 4-sifret PIN-kode som du vil bruke ved fremtidige innlogginger.
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Ny 4-sifret PIN
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="password"
+                  required
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="••••"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent tracking-widest"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Bekreft PIN
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="password"
+                  required
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="••••"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent tracking-widest"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-sm text-error-600 bg-error-50 rounded-lg px-3 py-2">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-700 disabled:opacity-60 text-white font-medium py-2.5 rounded-xl transition-colors"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Lagre PIN-kode
+            </button>
+          </form>
+
+          <button
+            onClick={signOut}
+            className="w-full flex items-center justify-center gap-2 mt-4 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Logg ut
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen() {
+  const { adminSignIn, workerSignIn } = useAuth();
+  const [mode, setMode] = useState<'admin' | 'worker'>('worker');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [employeeNumber, setEmployeeNumber] = useState('');
+  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -15,8 +162,12 @@ export function AuthScreen() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     const result =
-      mode === 'login' ? await signIn(email, password) : await signUp(email, password, fullName);
+      mode === 'admin'
+        ? await adminSignIn(email, password)
+        : await workerSignIn(employeeNumber, pin);
+
     setSubmitting(false);
     if (result.error) setError(result.error);
   };
@@ -53,80 +204,95 @@ export function AuthScreen() {
             <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  setError(null);
-                }}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  mode === 'login' ? 'bg-white shadow text-primary-800' : 'text-gray-500'
+                onClick={() => { setMode('worker'); setError(null); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  mode === 'worker' ? 'bg-white shadow text-primary-800' : 'text-gray-500'
                 }`}
               >
-                Logg inn
+                <Hash className="w-3.5 h-3.5" /> Ansatt
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setError(null);
-                }}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  mode === 'signup' ? 'bg-white shadow text-primary-800' : 'text-gray-500'
+                onClick={() => { setMode('admin'); setError(null); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  mode === 'admin' ? 'bg-white shadow text-primary-800' : 'text-gray-500'
                 }`}
               >
-                Registrer deg
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === 'signup' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Fullt navn
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Ola Nordmann"
-                      className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
+              {mode === 'admin' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">E-post</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="admin@aksell.no"
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Passord</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Ansattnummer
+                    </label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="number"
+                        required
+                        value={employeeNumber}
+                        onChange={(e) => setEmployeeNumber(e.target.value)}
+                        placeholder="f.eks. 104"
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      PIN-kode
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="password"
+                        required
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="••••"
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent tracking-widest"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">E-post</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="navn@aksell.no"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Passord</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
 
               {error && (
                 <p className="text-sm text-error-600 bg-error-50 rounded-lg px-3 py-2">{error}</p>
@@ -138,13 +304,13 @@ export function AuthScreen() {
                 className="w-full flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-700 disabled:opacity-60 text-white font-medium py-2.5 rounded-xl transition-colors"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {mode === 'login' ? 'Logg inn' : 'Registrer deg'}
+                Logg inn
               </button>
             </form>
 
-            {mode === 'signup' && (
+            {mode === 'worker' && (
               <p className="text-xs text-gray-400 mt-4 text-center leading-relaxed">
-                Den første som registrerer seg blir Admin. Alle andre registreres som Team Xtra-medarbeider.
+                Første gang? Bruk den midlertidige koden du fikk, og du vil bli bedt om å opprette din egen PIN.
               </p>
             )}
           </div>

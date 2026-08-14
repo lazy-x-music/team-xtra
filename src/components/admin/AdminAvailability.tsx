@@ -16,6 +16,7 @@ import {
 } from '@/types';
 import {
   computeHours,
+  employeeLabel,
   formatDate,
   formatHours,
   formatMonthLabel,
@@ -65,7 +66,7 @@ export function AdminAvailability({
     const [{ data: availData }, { data: shiftData }] = await Promise.all([
       supabase
         .from('worker_availability')
-        .select('*, worker:profiles!worker_id(full_name)')
+        .select('*, worker:profiles!worker_id(employee_number)')
         .gte('available_date', start)
         .lte('available_date', end),
       supabase
@@ -165,10 +166,10 @@ export function AdminAvailability({
               <div className="space-y-3">
                 {workersForDate.map((w) => (
                   <div key={w.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
-                    <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
-                      {w.worker?.full_name?.charAt(0) || '?'}
+                    <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-xs">
+                      #{w.worker?.employee_number ?? '?'}
                     </div>
-                    <p className="text-sm font-semibold flex-1">{w.worker?.full_name || 'Ukjent'}</p>
+                    <p className="text-sm font-semibold flex-1">{employeeLabel(w.worker?.employee_number)}</p>
                     <button
                       onClick={() => setSetupWorker(w)}
                       className="text-xs font-semibold bg-primary-800 text-white px-3 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-1.5"
@@ -213,11 +214,11 @@ function SetupShiftModal({
     <Modal title="Set opp på vakt" onClose={onClose} maxWidth="sm:max-w-md">
       <div className="space-y-4">
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-          <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
-            {worker.worker?.full_name?.charAt(0) || '?'}
+          <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-xs">
+            #{worker.worker?.employee_number ?? '?'}
           </div>
           <div>
-            <p className="text-sm font-semibold">{worker.worker?.full_name || 'Ukjent'}</p>
+            <p className="text-sm font-semibold">{employeeLabel(worker.worker?.employee_number)}</p>
             <p className="text-xs text-gray-500">{formatShortDate(worker.available_date)}</p>
           </div>
         </div>
@@ -256,7 +257,7 @@ export function AdminReports({ refresh }: { refresh: number }) {
   useEffect(() => {
     supabase
       .from('shift_applications')
-      .select('*, shift:shifts(*), worker:profiles!worker_id(full_name)')
+      .select('*, shift:shifts(*), worker:profiles!worker_id(employee_number)')
       .eq('verified', true)
       .then(({ data }) => setItems((data || []) as ApplicationWithShiftAndWorker[]));
   }, [refresh]);
@@ -267,7 +268,7 @@ export function AdminReports({ refresh }: { refresh: number }) {
     const map = new Map<string, { name: string; verified: number; shiftCount: number }>();
     filtered.forEach((item) => {
       const current = map.get(item.worker_id) || {
-        name: item.worker?.full_name || 'Ukjent',
+        name: employeeLabel(item.worker?.employee_number),
         verified: 0,
         shiftCount: 0,
       };
@@ -311,8 +312,8 @@ export function AdminReports({ refresh }: { refresh: number }) {
           <div>
             {workers.map((worker, i) => (
               <div key={i} className="p-5 border-b border-gray-100 last:border-0 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold">
-                  {worker.name.charAt(0)}
+                <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-xs">
+                  {worker.name.replace('Ansatt #', '')}
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-primary-950">{worker.name}</p>

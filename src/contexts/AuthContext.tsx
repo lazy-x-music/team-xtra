@@ -7,8 +7,9 @@ interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  adminSignIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  workerSignIn: (employeeNumber: string, pin: string) => Promise<{ error: string | null }>;
+  completePinSetup: (pin: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -17,20 +18,20 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, full_name, role, employee_number, setup_complete, created_at')
     .eq('id', userId)
     .maybeSingle();
   if (error) {
     console.error('fetchProfile failed', error);
     return null;
   }
-  return data;
+  return data as Profile | null;
 }
 
 function mapAuthError(message: string): string {
   if (message.includes('already registered')) return 'Denne e-posten er allerede registrert.';
-  if (message.includes('Invalid login credentials')) return 'Feil e-post eller passord.';
-  if (message.includes('Password should be at least')) return 'Passordet må ha minst 6 tegn.';
+  if (message.includes('Invalid login credentials')) return 'Feil ansattnummer eller kode.';
+  if (message.includes('Password should be at least')) return 'Koden må ha minst 6 tegn.';
   return 'Noe gikk galt. Vennligst prøv igjen.';
 }
 
@@ -63,19 +64,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  const signIn: AuthContextValue['signIn'] = async (email, password) => {
+  const adminSignIn: AuthContextValue['adminSignIn'] = async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: mapAuthError(error.message) };
     return { error: null };
   };
 
-  const signUp: AuthContextValue['signUp'] = async (email, password, fullName) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    });
+  const workerSignIn: AuthContextValue['workerSignIn'] = async (employeeNumber, pin) => {
+    // Workers log in with their employee number as a synthetic email
+    const email = `ansatt${employeeNumber}@aksell.internal`;
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
     if (error) return { error: mapAuthError(error.message) };
+    return { error: null };
+  };
+
+  const completePinSetup: AuthContextValue['completePinSetup'] = async (pin) => {
+    // 1. Store the PIN hash in the database and mark setup_complete.
+    //    This is the only blocking step — once it succeeds, the worker
+    //    is considered onboarded and can proceed to the dashboard.
+    const { error: rpcError } = await supabase.rpc('complete_pin_setup', { p_pin: pin });
+    if (rpcError) {
+      console.error('complete_pin_setup RPC failed:', rpcError.message, rpcError.code, rpcError.details);
+      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
+    }
+
+    // 2. Update the local profile immediately so the app routes to the
+    //    dashboard without waiting for any additional API calls.
+    if (session) {
+      setProfile(await fetchProfile(session.user.id));
+    }
+
+    // 3. Fire-and-forget: update the Supabase auth password via edge
+    //    function (admin API bypasses the client-side 6-char minimum).
+    //    If this fails, the worker's DB PIN is already set — the admin
+    //    can reset it. We don't block the redirect on this.
+    supabase.functions.invoke('update-worker-pin', { body: { pin } })
+      .then(({ error }) => {
+        if (error) console.error('update-worker-pin edge function failed:', error.message);
+      });
+
     return { error: null };
   };
 
@@ -84,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, profile, loading, adminSignIn, workerSignIn, completePinSetup, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,6 +4,8 @@ export interface Profile {
   id: string;
   full_name: string;
   role: Role;
+  employee_number: number | null;
+  setup_complete: boolean;
   created_at: string;
 }
 
@@ -38,7 +40,7 @@ export interface ShiftApplication {
 }
 
 export interface ApplicationWithWorker extends ShiftApplication {
-  worker: { full_name: string } | null;
+  worker: { employee_number: number | null } | null;
 }
 
 export interface ApplicationWithShift extends ShiftApplication {
@@ -47,7 +49,7 @@ export interface ApplicationWithShift extends ShiftApplication {
 
 export interface ApplicationWithShiftAndWorker extends ShiftApplication {
   shift: Shift;
-  worker: { full_name: string } | null;
+  worker: { employee_number: number | null } | null;
 }
 
 export interface WorkerAvailability {
@@ -58,7 +60,7 @@ export interface WorkerAvailability {
 }
 
 export interface AvailabilityWithWorker extends WorkerAvailability {
-  worker: { full_name: string } | null;
+  worker: { employee_number: number | null } | null;
 }
 
 export type NotificationType =

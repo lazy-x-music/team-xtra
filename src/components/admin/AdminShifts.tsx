@@ -20,12 +20,12 @@ import {
 } from '@/types';
 import {
   computeHours,
+  employeeLabel,
   formatDate,
   formatHours,
   formatShortDate,
   formatTimeRange,
   isShiftPast,
-  shiftTypeLabel,
 } from '@/utils/shiftHelpers';
 import {
   Card,
@@ -66,7 +66,7 @@ export function AdminCampaigns({
   async function load() {
     const [{ data: shiftData }, { data: appData }] = await Promise.all([
       supabase.from('shifts').select('*').eq('shift_type', 'campaign').order('shift_date', { ascending: true }).order('start_time', { ascending: true }),
-      supabase.from('shift_applications').select('*, worker:profiles!worker_id(full_name)').order('applied_at', { ascending: true }),
+      supabase.from('shift_applications').select('*, worker:profiles!worker_id(employee_number)').order('applied_at', { ascending: true }),
     ]);
     setShifts((shiftData || []) as Shift[]);
     setApplications((appData || []) as ApplicationWithWorker[]);
@@ -418,11 +418,11 @@ function ApplicantDrawer({
           applications.map((app) => (
             <div key={app.id} className="border border-gray-200 rounded-xl p-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
-                  {app.worker?.full_name?.charAt(0) || '?'}
+                <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-xs">
+                  #{app.worker?.employee_number ?? '?'}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold">{app.worker?.full_name || 'Ukjent medarbeider'}</p>
+                  <p className="text-sm font-semibold">{employeeLabel(app.worker?.employee_number)}</p>
                   <p className="text-xs text-gray-400">
                     Søkte {new Date(app.applied_at).toLocaleDateString('nb-NO')}
                   </p>
@@ -483,11 +483,11 @@ function EditHoursModal({
     <Modal title="Endre timer" onClose={onClose} maxWidth="sm:max-w-md">
       <div className="space-y-4">
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-          <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
-            {application.worker?.full_name?.charAt(0) || '?'}
+          <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-xs">
+            #{application.worker?.employee_number ?? '?'}
           </div>
           <div>
-            <p className="text-sm font-semibold">{application.worker?.full_name || 'Ukjent'}</p>
+            <p className="text-sm font-semibold">{employeeLabel(application.worker?.employee_number)}</p>
             <p className="text-xs text-gray-400">Godkjent: {formatHours(Number(scheduled))}</p>
           </div>
         </div>

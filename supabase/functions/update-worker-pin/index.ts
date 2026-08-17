@@ -48,10 +48,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Verify the caller has setup_complete = false (onboarding in progress)
+    // Verify the caller is a worker (setup_complete may already be true
+    // because the RPC runs first — that's fine, we just need to update
+    // the auth password to match the new PIN)
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
-      .select("setup_complete, role")
+      .select("role")
       .eq("id", userData.user.id)
       .maybeSingle();
 
@@ -62,8 +64,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (profile.role !== "worker" || profile.setup_complete) {
-      return new Response(JSON.stringify({ error: "Not eligible for PIN setup" }), {
+    if (profile.role !== "worker") {
+      return new Response(JSON.stringify({ error: "Only workers can set a PIN" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

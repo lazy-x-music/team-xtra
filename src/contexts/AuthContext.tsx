@@ -80,28 +80,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completePinSetup: AuthContextValue['completePinSetup'] = async (pin) => {
     // 1. Store the PIN hash in the database and mark setup_complete.
-    //    This is the only blocking step — once it succeeds, the worker
-    //    is considered onboarded and can proceed to the dashboard.
     const { error: rpcError } = await supabase.rpc('complete_pin_setup', { p_pin: pin });
     if (rpcError) {
       console.error('complete_pin_setup RPC failed:', rpcError.message, rpcError.code, rpcError.details);
       return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
     }
 
-    // 2. Update the local profile immediately so the app routes to the
-    //    dashboard without waiting for any additional API calls.
+    // 2. Update the Supabase auth password via edge function (admin API
+    //    bypasses the client-side 6-char minimum). Blocking so we can
+    //    confirm the password was updated before redirecting.
+    const { error: fnError } = await supabase.functions.invoke('update-worker-pin', { body: { pin } });
+    if (fnError) {
+      console.error('update-worker-pin edge function failed:', fnError.message);
+      // Don't fail hard — the DB PIN is already saved. Admin can reset if needed.
+    }
+
+    // 3. Update the local profile immediately so the app routes to the dashboard.
     if (session) {
       setProfile(await fetchProfile(session.user.id));
     }
-
-    // 3. Fire-and-forget: update the Supabase auth password via edge
-    //    function (admin API bypasses the client-side 6-char minimum).
-    //    If this fails, the worker's DB PIN is already set — the admin
-    //    can reset it. We don't block the redirect on this.
-    supabase.functions.invoke('update-worker-pin', { body: { pin } })
-      .then(({ error }) => {
-        if (error) console.error('update-worker-pin edge function failed:', error.message);
-      });
 
     return { error: null };
   };

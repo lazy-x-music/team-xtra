@@ -343,7 +343,7 @@ const NOTIFICATION_ICONS: Record<string, { icon: typeof Bell; cls: string }> = {
   hours_updated: { icon: Clock3, cls: 'bg-primary-50 text-primary-600' },
 };
 
-export function WorkerNotifications({ refresh }: { refresh: number }) {
+export function WorkerNotifications({ refresh, onRefresh }: { refresh: number; onRefresh: () => void }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -356,13 +356,18 @@ export function WorkerNotifications({ refresh }: { refresh: number }) {
       .from('notifications')
       .select('*')
       .order('created_at', { ascending: false });
-    setNotifications((data || []) as AppNotification[]);
-    setUnreadCount((data || []).filter((n: AppNotification) => !n.read).length);
-  }
+    const list = (data || []) as AppNotification[];
+    setNotifications(list);
+    const unread = list.filter((n: AppNotification) => !n.read).length;
+    setUnreadCount(unread);
 
-  async function markAllRead() {
-    await supabase.rpc('mark_notifications_read');
-    load();
+    // Auto-mark all as read when the notifications tab is opened
+    if (unread > 0) {
+      await supabase.rpc('mark_notifications_read');
+      setUnreadCount(0);
+      setNotifications(list.map((n) => ({ ...n, read: true })));
+      onRefresh();
+    }
   }
 
   return (
@@ -371,13 +376,6 @@ export function WorkerNotifications({ refresh }: { refresh: number }) {
         eyebrow="Team Xtra"
         title="Meldinger"
         description="Varsler om godkjenninger, vaktendringer og oppdateringer."
-        action={
-          unreadCount > 0 ? (
-            <button onClick={markAllRead} className="text-sm font-semibold text-primary-700 hover:text-primary-900">
-              Marker alle som lest
-            </button>
-          ) : undefined
-        }
       />
 
       {unreadCount > 0 && (

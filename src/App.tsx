@@ -127,7 +127,7 @@ function WorkerApp({ onSignOut }: { onSignOut: () => Promise<void> }) {
       onSignOut={onSignOut}
       refresh={refresh}
     >
-      {page === 'notifications' && <WorkerNotifications refresh={refresh} />}
+      {page === 'notifications' && <WorkerNotifications refresh={refresh} onRefresh={refreshData} />}
       {page === 'campaigns' && <WorkerCampaigns refresh={refresh} onRefresh={refreshData} />}
       {page === 'availability' && <WorkerAvailability refresh={refresh} onRefresh={refreshData} />}
       {page === 'my-shifts' && <MyShifts refresh={refresh} />}

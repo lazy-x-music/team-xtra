@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completePinSetup: AuthContextValue['completePinSetup'] = async (pin) => {
     // 1. Store the PIN hash in the database and mark setup_complete.
+    //    This is idempotent — safe to call even if setup was already completed.
     const { error: rpcError } = await supabase.rpc('complete_pin_setup', { p_pin: pin });
     if (rpcError) {
       console.error('complete_pin_setup RPC failed:', rpcError.message, rpcError.code, rpcError.details);
@@ -95,8 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Don't fail hard — the DB PIN is already saved. Admin can reset if needed.
     }
 
-    // 3. Update the local profile immediately so the app routes to the dashboard.
+    // 3. Refresh the session so the new password is recognized, then
+    //    update the local profile so the app routes to the dashboard.
     if (session) {
+      await supabase.auth.refreshSession();
       setProfile(await fetchProfile(session.user.id));
     }
 

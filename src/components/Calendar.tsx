@@ -25,6 +25,7 @@ export interface CalendarProps {
   selectedDates?: Set<string>;
   confirmedDates?: Set<string>;
   availabilityMap?: Map<string, number>; // dateStr -> count of available workers
+  approvedCountsMap?: Map<string, number>; // dateStr -> count of approved workers
   onDateClick?: (dateStr: string, day: CalendarDay) => void;
   selectableFilter?: (dateStr: string) => boolean;
   showAvailabilityCounts?: boolean;
@@ -37,6 +38,7 @@ export function Calendar({
   selectedDates,
   confirmedDates,
   availabilityMap,
+  approvedCountsMap,
   onDateClick,
   selectableFilter,
   showAvailabilityCounts,
@@ -59,6 +61,7 @@ export function Calendar({
           const isSelected = selectedDates?.has(day.dateStr);
           const isConfirmed = confirmedDates?.has(day.dateStr);
           const isAvailable = availabilityMap?.get(day.dateStr) ?? 0;
+          const approvedCount = approvedCountsMap?.get(day.dateStr) ?? 0;
           const passesFilter = selectableFilter ? selectableFilter(day.dateStr) : true;
           const canClick = day.inMonth && day.selectable && passesFilter;
           const hasBadge = renderDayBadge && day.inMonth;
@@ -90,14 +93,17 @@ export function Calendar({
                 <span className="text-[8px] text-gray-400 mt-0.5 leading-none">Hellig</span>
               )}
               {isConfirmed && (
-                <span className="text-[7px] font-semibold mt-0.5 leading-none">Vakt</span>
+                <span className="flex flex-col items-center leading-none mt-0.5">
+                  <span className="text-[10px] font-bold">{approvedCount}</span>
+                  <span className="text-[7px] font-semibold opacity-90">Godkjent</span>
+                </span>
               )}
               {showAvailabilityCounts && isAvailable > 0 && !isSelected && !isConfirmed && (
                 <span className="absolute bottom-0.5 right-0.5 text-[9px] font-bold bg-accent-500 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
                   {isAvailable}
                 </span>
               )}
-              {hasBadge && (
+              {hasBadge && !isConfirmed && (
                 <span className="absolute top-0.5 right-0.5">{renderDayBadge!(day.dateStr)}</span>
               )}
             </button>

@@ -110,10 +110,19 @@ export function AdminAvailability({
     return map;
   }, [availability]);
 
+  const approvedWorkerIds = useMemo(() => {
+    if (!selectedDate) return new Set<string>();
+    return new Set(
+      (approvedByDate.get(selectedDate) || []).map((a) => a.worker_id)
+    );
+  }, [approvedByDate, selectedDate]);
+
   const workersForDate = useMemo(() => {
     if (!selectedDate) return [];
-    return availability.filter((a) => a.available_date === selectedDate);
-  }, [availability, selectedDate]);
+    return availability.filter(
+      (a) => a.available_date === selectedDate && !approvedWorkerIds.has(a.worker_id)
+    );
+  }, [availability, selectedDate, approvedWorkerIds]);
 
   const approvedForDate = useMemo(() => {
     if (!selectedDate) return [];
@@ -172,18 +181,8 @@ export function AdminAvailability({
           month={month}
           availabilityMap={availabilityMap}
           confirmedDates={confirmedDates}
+          approvedCountsMap={approvedCounts}
           showAvailabilityCounts
-          renderDayBadge={(dateStr) => {
-            const count = approvedCounts.get(dateStr);
-            if (count && count > 0) {
-              return (
-                <span className="text-[8px] font-bold bg-white/25 text-white rounded-full px-1.5 py-0.5 leading-none">
-                  {count} godkjent
-                </span>
-              );
-            }
-            return null;
-          }}
           onDateClick={(dateStr) => setSelectedDate(dateStr)}
           selectableFilter={() => true}
         />
@@ -197,10 +196,6 @@ export function AdminAvailability({
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded bg-success-500" /> Bekreftet vakt
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[8px] font-bold bg-success-100 text-success-700 rounded-full px-1.5 py-0.5">N godkjent</span>
-            Antall godkjente
           </span>
         </div>
       </Card>

@@ -32,7 +32,7 @@ function mapAuthError(message: string): string {
   if (message.includes('already registered')) return 'Denne e-posten er allerede registrert.';
   if (message.includes('Invalid login credentials')) return 'Feil ansattnummer eller kode.';
   if (message.includes('Password should be at least')) return 'Koden må ha minst 6 tegn.';
-  return 'Noe gikk galt. Vennligst prøv igjen.';
+  return 'Feil ansattnummer eller kode.';
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -73,18 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const workerSignIn: AuthContextValue['workerSignIn'] = async (employeeNumber, pin) => {
     const email = `ansatt${employeeNumber}@aksell.internal`;
 
-    // 1. Prøv først med innskrevet PIN som passord i Supabase Auth
-    let { error } = await supabase.auth.signInWithPassword({ email, password: pin });
-
-    // 2. Hvis feil (f.eks. ny PIN i DB, men Auth har gammel 0000), prøv med fallback 0000 for å slippe gjennom til tilbakestilling
-    if (error) {
-      const fallback = await supabase.auth.signInWithPassword({ email, password: '0000' });
-      if (!fallback.error) {
-        // Hvis innlogging med 0000 overstyrer, oppdaterer vi auth-passordet umiddelbart til den nye PIN-en!
-        await supabase.auth.updateUser({ password: pin });
-        error = null;
-      }
-    }
+    // Sjekk KUN om den inntastede PIN-koden stemmer med brukerens passord
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
 
     if (error) return { error: mapAuthError(error.message) };
     return { error: null };
@@ -98,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen.' };
     }
 
-    // 2. Tving oppdatering av passordet direkte på den innloggede Supabase Auth-brukeren!
+    // 2. Oppdater passordet på Supabase Auth-brukeren slik at neste innlogging KUN godtar den nye PIN-en
     const { error: updateError } = await supabase.auth.updateUser({ password: pin });
     if (updateError) {
       console.error('Kunne ikke oppdatere auth passord:', updateError.message);

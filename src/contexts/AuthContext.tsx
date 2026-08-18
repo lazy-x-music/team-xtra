@@ -32,7 +32,7 @@ function mapAuthError(message: string): string {
   if (message.includes('already registered')) return 'Denne e-posten er allerede registrert.';
   if (message.includes('Invalid login credentials')) return 'Feil ansattnummer eller kode.';
   if (message.includes('Password should be at least')) return 'Koden må ha minst 6 tegn.';
-  return 'Feil ansattnummer eller kode.';
+  return 'Noe gikk galt. Vennligst prøv igjen.';
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -71,31 +71,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const workerSignIn: AuthContextValue['workerSignIn'] = async (employeeNumber, pin) => {
+    // Workers log in with their employee number as a synthetic email
     const email = `ansatt${employeeNumber}@aksell.internal`;
-
-    // Sjekk KUN om den inntastede PIN-koden stemmer med brukerens passord
     const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
-
     if (error) return { error: mapAuthError(error.message) };
     return { error: null };
   };
 
   const completePinSetup: AuthContextValue['completePinSetup'] = async (pin) => {
-    // 1. Lagre PIN i databasen via RPC
+    // 1. Store the PIN hash in the database and mark setup_complete.
+    //    This is idempotent — safe to call even if setup was already completed.
     const { error: rpcError } = await supabase.rpc('complete_pin_setup', { p_pin: pin });
     if (rpcError) {
-      console.error('complete_pin_setup RPC failed:', rpcError.message);
-      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen.' };
+      console.error('complete_pin_setup RPC failed:', rpcError.message, rpcError.code, rpcError.details);
+      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
     }
 
-    // 2. Oppdater passordet på Supabase Auth-brukeren slik at neste innlogging KUN godtar den nye PIN-en
-    const { error: updateError } = await supabase.auth.updateUser({ password: pin });
-    if (updateError) {
-      console.error('Kunne ikke oppdatere auth passord:', updateError.message);
+    // 2. Update the Supabase auth password via edge function (admin API
+    //    bypasses the client-side 6-char minimum). Blocking so we can
+    //    confirm the password was updated before redirecting.
+    const { error: fnError } = await supabase.functions.invoke('update-worker-pin', { body: { pin } });
+    if (fnError) {
+      console.error('update-worker-pin edge function failed:', fnError.message);
+      // Don't fail hard — the DB PIN is already saved. Admin can reset if needed.
     }
 
-    // 3. Oppdater lokal profil
+    // 3. Refresh the session so the new password is recognized, then
+    //    update the local profile so the app routes to the dashboard.
     if (session) {
+      await supabase.auth.refreshSession();
       setProfile(await fetchProfile(session.user.id));
     }
 

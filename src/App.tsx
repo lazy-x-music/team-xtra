@@ -1,19 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  BarChart3,
-  Bell,
-  CalendarDays,
-  CalendarPlus,
-  CheckCircle2,
-  ChevronRight,
-  Hash,
-  LogOut,
-  Menu,
-  Megaphone,
-  Settings,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
+import { ChartBar as BarChart3, Bell, CalendarDays, CalendarPlus, CircleCheck as CheckCircle2, ChevronRight, Hash, LogOut, Menu, Megaphone, Settings, ShieldCheck, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AuthScreen, PinOnboarding } from '@/components/AuthScreen';
 import { useAuth, AuthProvider } from '@/contexts/AuthContext';
@@ -41,9 +27,9 @@ function App() {
 }
 
 function AppContent() {
-  const { session, profile, loading, signOut } = useAuth();
+  const { profile, loading, signOut } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (!session || !profile) return <AuthScreen />;
+  if (!profile) return <AuthScreen />;
   if (profile.role === 'worker' && !profile.setup_complete) {
     return <PinOnboarding />;
   }

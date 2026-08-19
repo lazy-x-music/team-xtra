@@ -71,10 +71,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const workerSignIn: AuthContextValue['workerSignIn'] = async (employeeNumber, pin) => {
-    // Workers log in with their employee number as a synthetic email
-    const email = `ansatt${employeeNumber}@aksell.internal`;
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
-    if (error) return { error: mapAuthError(error.message) };
+    const num = parseInt(employeeNumber, 10);
+    if (isNaN(num)) return { error: 'Ugyldig ansattnummer.' };
+
+    const { data, error: fnError } = await supabase.functions.invoke('worker-login', {
+      body: { employee_number: num, pin },
+    });
+
+    if (fnError) {
+      console.error('worker-login edge function error:', fnError.message);
+      return { error: 'Innlogging mislyktes. Prøv igjen.' };
+    }
+
+    if (!data || data.error) {
+      return { error: data?.error || 'Innlogging mislyktes.' };
+    }
+
+    if (!data.access_token || !data.refresh_token) {
+      return { error: 'Innlogging mislyktes. Prøv igjen.' };
+    }
+
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+
+    if (sessionError) {
+      console.error('setSession failed:', sessionError.message);
+      return { error: 'Innlogging mislyktes. Prøv igjen.' };
+    }
+
     return { error: null };
   };
 
@@ -88,12 +114,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // 2. Update the Supabase auth password via edge function (admin API
-    //    bypasses the client-side 6-char minimum). Blocking so we can
-    //    confirm the password was updated before redirecting.
-    const { error: fnError } = await supabase.functions.invoke('update-worker-pin', { body: { pin } });
+    //    bypasses the client-side 6-char minimum). Blocking — if this
+    //    fails the worker must not be allowed to proceed, otherwise they
+    //    could be locked out of future logins.
+    const { data: fnData, error: fnError } = await supabase.functions.invoke('update-worker-pin', { body: { pin } });
     if (fnError) {
       console.error('update-worker-pin edge function failed:', fnError.message);
-      // Don't fail hard — the DB PIN is already saved. Admin can reset if needed.
+      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
+    }
+    if (fnData && fnData.error) {
+      console.error('update-worker-pin returned error:', fnData.error);
+      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
     }
 
     // 3. Refresh the session so the new password is recognized, then

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Loader as Loader2, Plus, RotateCcw, UserPlus, Users } from 'lucide-react';
-import bcrypt from 'bcryptjs';
+import { KeyRound, Loader2, Plus, RotateCcw, UserPlus, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types';
 import { employeeLabel } from '@/utils/shiftHelpers';
@@ -41,37 +40,18 @@ export function AdminEmployees({
   }
 
   async function createEmployee(employeeNumber: number, setupCode: string) {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('employee_number', employeeNumber)
-      .maybeSingle();
-
-    if (existing) {
-      setNotice({ message: 'Ansattnummeret er allerede i bruk.', error: true });
-      return false;
-    }
-
-    const salt = bcrypt.genSaltSync(10);
-    const hashedCode = bcrypt.hashSync(setupCode, salt);
-
-    const { error } = await supabase
-      .from('profiles')
-      .insert({
-        employee_number: employeeNumber,
-        role: 'worker',
-        full_name: '',
-        pin_hash: hashedCode,
-        setup_complete: false,
-      });
+    const { error } = await supabase.functions.invoke('create-employee', {
+      body: { employee_number: employeeNumber, setup_code: setupCode },
+    });
 
     if (error) {
-      setNotice({ message: error.message || 'Kunne ikke opprette ansatt.', error: true });
+      const body = await error.context.json().catch(() => ({}));
+      setNotice({ message: body.error || 'Kunne ikke opprette ansatt.', error: true });
       return false;
     }
 
     setNotice({
-      message: `Ansatt #${employeeNumber} opprettet. Midlertidig kode: ${setupCode}`,
+      message: `Ansatt #${employeeNumber} opprettet. Midlertidig kode: ${setupCode || '0000'}`,
     });
     setShowCreate(false);
     load();
@@ -80,22 +60,18 @@ export function AdminEmployees({
   }
 
   async function resetPin(worker: Profile) {
-    const tempCode = '0000';
-    const salt = bcrypt.genSaltSync(10);
-    const hashedCode = bcrypt.hashSync(tempCode, salt);
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ pin_hash: hashedCode, setup_complete: false })
-      .eq('id', worker.id);
+    const { error } = await supabase.functions.invoke('reset-pin', {
+      body: { employee_number: worker.employee_number },
+    });
 
     if (error) {
-      setNotice({ message: 'Kunne ikke nullstille PIN.', error: true });
+      const body = await error.context.json().catch(() => ({}));
+      setNotice({ message: body.error || 'Kunne ikke nullstille PIN.', error: true });
       return;
     }
 
     setNotice({
-      message: `PIN nullstilt for ${employeeLabel(worker.employee_number)}. Midlertidig kode: ${tempCode}`,
+      message: `PIN nullstilt for ${employeeLabel(worker.employee_number)}. Midlertidig kode: 0000`,
     });
     setResetTarget(null);
     load();
@@ -219,7 +195,7 @@ function CreateEmployeeModal({
             value={employeeNumber}
             onChange={(e) => setEmployeeNumber(e.target.value)}
             placeholder="f.eks. 104"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </Field>
         <Field label="Midlertidig kode">
@@ -230,7 +206,7 @@ function CreateEmployeeModal({
             value={setupCode}
             onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
             placeholder="0000"
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline focus:ring-2 focus:ring-primary-500 focus:border-transparent tracking-widest"
+            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent tracking-widest"
           />
           <p className="text-xs text-gray-400 mt-1.5">
             Standard er 0000. Den ansatte bruker denne koden ved første innlogging og oppretter deretter sin egen PIN.

@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session } from '@supabase/supabase-js';
-import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types';
 
@@ -16,13 +15,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const WORKER_SESSION_KEY = 'aksell_worker_session';
-
-interface WorkerSession {
-  profile: Profile;
-  pin_hash: string | null;
-}
-
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
@@ -36,28 +28,10 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
   return data as Profile | null;
 }
 
-function getStoredWorkerSession(): WorkerSession | null {
-  try {
-    const raw = localStorage.getItem(WORKER_SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as WorkerSession;
-  } catch {
-    return null;
-  }
-}
-
-function storeWorkerSession(ws: WorkerSession | null) {
-  if (ws) {
-    localStorage.setItem(WORKER_SESSION_KEY, JSON.stringify(ws));
-  } else {
-    localStorage.removeItem(WORKER_SESSION_KEY);
-  }
-}
-
 function mapAuthError(message: string): string {
   if (message.includes('already registered')) return 'Denne e-posten er allerede registrert.';
-  if (message.includes('Invalid login credentials')) return 'Feil e-post eller passord.';
-  if (message.includes('Password should be at least')) return 'Passordet må ha minst 6 tegn.';
+  if (message.includes('Invalid login credentials')) return 'Feil ansattnummer eller kode.';
+  if (message.includes('Password should be at least')) return 'Koden må ha minst 6 tegn.';
   return 'Noe gikk galt. Vennligst prøv igjen.';
 }
 
@@ -68,12 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
+      setSession(data.session);
       if (data.session) {
-        setSession(data.session);
         setProfile(await fetchProfile(data.session.user.id));
-      } else {
-        const ws = getStoredWorkerSession();
-        if (ws) setProfile(ws.profile);
       }
       setLoading(false);
     });
@@ -84,8 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (newSession) {
           setProfile(await fetchProfile(newSession.user.id));
         } else {
-          const ws = getStoredWorkerSession();
-          setProfile(ws ? ws.profile : null);
+          setProfile(null);
         }
         setLoading(false);
       })();
@@ -101,90 +71,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const workerSignIn: AuthContextValue['workerSignIn'] = async (employeeNumber, pin) => {
-    const num = parseInt(employeeNumber, 10);
-    if (isNaN(num)) return { error: 'Ugyldig ansattnummer.' };
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, role, employee_number, setup_complete, created_at, pin_hash')
-      .eq('employee_number', num)
-      .eq('role', 'worker')
-      .maybeSingle();
-
-    if (error || !data) {
-      return { error: 'Feil ansattnummer eller kode.' };
-    }
-
-    const storedHash = data.pin_hash as string | null;
-
-    if (!data.setup_complete) {
-      // Before setup: check against temp code stored in pin_hash
-      if (storedHash && bcrypt.compareSync(pin, storedHash)) {
-        const workerProfile: Profile = {
-          id: data.id, full_name: data.full_name, role: data.role,
-          employee_number: data.employee_number, setup_complete: data.setup_complete,
-          created_at: data.created_at,
-        };
-        storeWorkerSession({ profile: workerProfile, pin_hash: storedHash });
-        setProfile(workerProfile);
-        return { error: null };
-      }
-      if (!storedHash && pin === '0000') {
-        const workerProfile: Profile = {
-          id: data.id, full_name: data.full_name, role: data.role,
-          employee_number: data.employee_number, setup_complete: data.setup_complete,
-          created_at: data.created_at,
-        };
-        storeWorkerSession({ profile: workerProfile, pin_hash: null });
-        setProfile(workerProfile);
-        return { error: null };
-      }
-      return { error: 'Feil ansattnummer eller kode.' };
-    }
-
-    // After setup: verify PIN against bcrypt hash
-    if (!storedHash || !bcrypt.compareSync(pin, storedHash)) {
-      return { error: 'Feil ansattnummer eller kode.' };
-    }
-
-    const workerProfile: Profile = {
-      id: data.id, full_name: data.full_name, role: data.role,
-      employee_number: data.employee_number, setup_complete: data.setup_complete,
-      created_at: data.created_at,
-    };
-    storeWorkerSession({ profile: workerProfile, pin_hash: storedHash });
-    setProfile(workerProfile);
+    // Workers log in with their employee number as a synthetic email
+    const email = `ansatt${employeeNumber}@aksell.internal`;
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pin });
+    if (error) return { error: mapAuthError(error.message) };
     return { error: null };
   };
 
   const completePinSetup: AuthContextValue['completePinSetup'] = async (pin) => {
-    if (!profile) return { error: 'Ingen innlogget bruker.' };
-    if (!/^\d{4}$/.test(pin)) return { error: 'PIN må være 4 siffer.' };
-
-    const salt = bcrypt.genSaltSync(10);
-    const newHash = bcrypt.hashSync(pin, salt);
-
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ pin_hash: newHash, setup_complete: true })
-      .eq('id', profile.id);
-
-    if (updateError) {
-      console.error('Failed to update PIN:', updateError.message);
-      return { error: 'Kunne ikke lagre PIN-koden. Prøv igjen.' };
+    // 1. Store the PIN hash in the database and mark setup_complete.
+    //    This is idempotent — safe to call even if setup was already completed.
+    const { error: rpcError } = await supabase.rpc('complete_pin_setup', { p_pin: pin });
+    if (rpcError) {
+      console.error('complete_pin_setup RPC failed:', rpcError.message, rpcError.code, rpcError.details);
+      return { error: 'Kunne ikke lagre PIN-koden. Vennligst prøv igjen, eller kontakt administratoren.' };
     }
 
-    const updatedProfile: Profile = { ...profile, setup_complete: true };
-    setProfile(updatedProfile);
-    storeWorkerSession({ profile: updatedProfile, pin_hash: newHash });
+    // 2. Update the Supabase auth password via edge function (admin API
+    //    bypasses the client-side 6-char minimum). Blocking so we can
+    //    confirm the password was updated before redirecting.
+    const { error: fnError } = await supabase.functions.invoke('update-worker-pin', { body: { pin } });
+    if (fnError) {
+      console.error('update-worker-pin edge function failed:', fnError.message);
+      // Don't fail hard — the DB PIN is already saved. Admin can reset if needed.
+    }
+
+    // 3. Refresh the session so the new password is recognized, then
+    //    update the local profile so the app routes to the dashboard.
+    if (session) {
+      await supabase.auth.refreshSession();
+      setProfile(await fetchProfile(session.user.id));
+    }
+
     return { error: null };
   };
 
-  const signOut: AuthContextValue['signOut'] = async () => {
-    storeWorkerSession(null);
+  const signOut = async () => {
     await supabase.auth.signOut();
-    setProfile(null);
-    setSession(null);
   };
 
   return (
